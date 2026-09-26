@@ -15,11 +15,11 @@
   <script src="openlime/js/openlime.min.js"></script>
   <script>
     (async () => {
-      let url = null;
-      for (const name of ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf']) {
+      let url = null, layout = 'image';
+      for (const name of ['rti_dz', 'rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf_flat_quarter', 'rti_rbf']) {
         try {
           const r = await fetch('../' + name + '/info.json', { method: 'HEAD' });
-          if (r.ok) { url = '../' + name + '/info.json'; break; }
+          if (r.ok) { url = '../' + name + '/info.json'; layout = name === 'rti_dz' ? 'deepzoom' : 'image'; break; }
         } catch (e) {}
       }
       if (!url) { document.body.insertAdjacentHTML('beforeend', '<p style="padding:16px">找不到 RTI 資料</p>'); return; }
@@ -27,7 +27,7 @@
       const lime = new OpenLIME.Viewer('.openlime');
       const layer = new OpenLIME.Layer({
         label: 'Gold paper RTI (RBF)',
-        layout: 'image',
+        layout,
         type: 'rti',
         url,
         normals: false
