@@ -1,153 +1,4 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>一息 A Single Breath・林郁珮</title>
-<style>
-  :root { --bg:#121212; --panel:#1c1c1c; --fg:#e8e8e8; --muted:#9a9a9a; --accent:#d9a441; --warn:#e8734a; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, "Noto Sans TC", sans-serif; }
-  .wrap { display:flex; height:100%; }
-  .stage { flex:1; min-width:0; position:relative; }
-  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
-  canvas.dragging { cursor:grabbing; }
-  .panel { width:300px; background:var(--panel); padding:16px; overflow:auto; }
-  h1 { font-size:15px; margin:0 0 12px; font-weight:600; }
-  h2 { font-size:13px; margin:22px 0 0; padding-top:14px; border-top:1px solid #333; font-weight:600; }
-  label { display:block; margin:14px 0 4px; color:var(--muted); font-size:12px; }
-  label b { color:var(--fg); font-weight:500; float:right; font-variant-numeric:tabular-nums; }
-  label.check { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; cursor:pointer; }
-  input[type=range] { width:100%; accent-color:var(--accent); }
-  input[type=checkbox] { accent-color:var(--accent); width:16px; height:16px; }
-  button { width:100%; margin-top:8px; padding:8px; background:var(--accent); color:#111; border:0; border-radius:6px; font-weight:600; cursor:pointer; }
-  button.secondary { background:#333; color:var(--fg); }
-  button.overlay { position:absolute; left:50%; bottom:56px; transform:translateX(-50%); width:auto; padding:10px 18px; z-index:2; box-shadow:0 2px 12px rgba(0,0,0,.5); }
-  .row { display:flex; gap:6px; }
-  .row button { margin-top:0; }
-  .hint { color:var(--muted); font-size:12px; margin:6px 0 0; white-space:pre-line; }
-  #relel { margin-top:12px; padding:8px; border-radius:6px; background:#262626; font-size:12px; white-space:pre-line; }
-  #relel.warn { background:#3a2219; color:var(--warn); }
-  #status { margin-top:14px; color:var(--muted); font-size:12px; white-space:pre-line; }
-  a { color:var(--accent); }
-  body.embed .panel { display:none; }
-  .bar { position:fixed; left:0; right:0; bottom:0; z-index:7; display:flex; gap:12px;
-    align-items:center; justify-content:space-between; background:#e9e9e9; color:#333;
-    font-size:12px; line-height:1.4; padding:7px 14px;
-    padding-bottom:calc(7px + env(safe-area-inset-bottom)); }
-  .bar b { font-weight:600; }
-  .bar span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .bar .prog { position:absolute; left:0; top:0; height:2px; width:0; background:#d9a441; transition:width .15s linear; }
-  body.embed .bar { display:none; }
-  .err { position:absolute; left:12px; right:12px; bottom:12px; z-index:6; display:none;
-    background:rgba(58,22,18,.95); color:#ffd9cc; padding:12px 14px; border-radius:8px;
-    font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; max-height:60%; overflow:auto; }
-  .hamburger { position:absolute; top:12px; right:12px; z-index:3; width:44px; height:44px; padding:0; margin:0; display:none;
-    align-items:center; justify-content:center; background:rgba(20,20,20,.72); color:var(--fg); border-radius:10px; }
-  .hamburger span { display:block; width:20px; height:2px; background:currentColor; box-shadow:0 -6px 0 currentColor, 0 6px 0 currentColor; }
-  .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:4; display:none; }
-  .panel .close { display:none; }
-  body.embed .hamburger, body.embed .backdrop { display:none !important; }
-  @media (max-width: 700px) {
-    .wrap { flex-direction:column; }
-    .stage { flex:1; height:100%; }
-    .hamburger { display:flex; }
-    .panel { position:fixed; top:0; right:0; bottom:0; width:min(88vw, 340px); z-index:5;
-      transform:translateX(100%); transition:transform .25s ease;
-      padding-top:calc(16px + env(safe-area-inset-top)); box-shadow:-8px 0 24px rgba(0,0,0,.5); }
-    body.panel-open .panel { transform:none; }
-    body.panel-open .backdrop { display:block; }
-    .panel .close { display:block; position:absolute; top:10px; right:12px; width:36px; height:36px;
-      padding:0; margin:0; background:#333; color:var(--fg); font-size:18px; line-height:1; }
-    h1 { padding-right:44px; }
-  }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="stage">
-    <canvas id="c"></canvas>
-    <div id="err" class="err"></div>
-    <button id="gyroBtn" class="overlay" hidden>點一下啟用陀螺儀</button>
-    <button id="menu" class="hamburger" aria-label="開啟調整介面" aria-expanded="false"><span></span></button>
-  </div>
-  <div id="backdrop" class="backdrop"></div>
-  <div class="bar" id="bar">
-    <i class="prog" id="prog"></i>
-    <span><b>一息</b>　A Single Breath　·　林郁珮</span>
-    <span id="barInfo">載入中…</span>
-  </div>
-  <div class="panel">
-    <button id="panelClose" class="close" aria-label="關閉調整介面">✕</button>
-    <h1>一息　A Single Breath</h1>
-    <div class="row">
-      <button id="zin" class="secondary">放大</button>
-      <button id="zout" class="secondary">縮小</button>
-      <button id="zreset" class="secondary">全圖</button>
-    </div>
-    <p class="hint">滾輪或雙指縮放、拖曳平移、雙擊回到全圖　<b id="vzoom"></b></p>
 
-    <h2>互動</h2>
-    <label class="check"><input id="interact" type="checkbox" checked> 滑鼠／陀螺儀控制傾斜</label>
-    <label class="check"><input id="invert" type="checkbox"> 反轉方向</label>
-    <div class="row" style="margin-top:8px">
-      <button id="gyroEnable" class="secondary" hidden>啟用陀螺儀</button>
-      <button id="recenter" class="secondary" hidden>重新校正水平</button>
-    </div>
-    <p class="hint" id="interactHint"></p>
-
-    <label>畫紙左右傾斜 <b id="vtx"></b></label>
-    <input id="tx" type="range" min="-45" max="45" step="any" value="0">
-    <label>畫紙上下傾斜 <b id="vty"></b></label>
-    <input id="ty" type="range" min="-45" max="45" step="any" value="0">
-    <label>最大傾斜／搖擺幅度 <b id="vamp"></b></label>
-    <input id="amp" type="range" min="0" max="45" step="0.5" value="25">
-    <label>透視變形比例（手機建議 0.3） <b id="vpersp"></b></label>
-    <input id="persp" type="range" min="0" max="1" step="0.01" value="1">
-    <div class="row" style="margin-top:8px">
-      <button id="swingX">▶ 左右搖擺</button>
-      <button id="swingY" class="secondary">▶ 上下搖擺</button>
-    </div>
-    <div id="relel"></div>
-
-    <h2>光源與相機</h2>
-    <label>光源方位（0° 右、90° 上、180° 左） <b id="vlaz"></b></label>
-    <input id="laz" type="range" min="0" max="360" step="1" value="180">
-    <label>光源仰角 <b id="vlel"></b></label>
-    <input id="lel" type="range" min="5" max="85" step="0.5" value="50">
-    <label>光源距離（畫寬倍數） <b id="vldist"></b></label>
-    <input id="ldist" type="range" min="0.6" max="6" step="0.05" value="2.5">
-    <label>相機距離（畫寬倍數） <b id="vcamd"></b></label>
-    <input id="camd" type="range" min="1.2" max="8" step="0.05" value="3">
-    <label>曝光 <b id="vexp"></b></label>
-    <input id="exp" type="range" min="-3" max="3" step="0.05" value="0">
-    <label>光向內插平滑度 <b id="vsigma"></b></label>
-    <input id="sigma" type="range" min="0.08" max="0.6" step="0.01" value="0.22">
-
-    <h2>金紙反光（合成）</h2>
-    <label class="check"><input id="gold" type="checkbox" checked> 啟用金紙反光</label>
-    <label class="check"><input id="showMask" type="checkbox"> 顯示金紙遮罩</label>
-    <label>反光強度 <b id="vgstr"></b></label>
-    <input id="gstr" type="range" min="0" max="3" step="0.01" value="0.6">
-    <label>光澤銳利度 <b id="vshin"></b></label>
-    <input id="shin" type="range" min="1" max="3" step="0.01" value="2">
-    <label>皺褶閃點 <b id="vspark"></b></label>
-    <input id="spark" type="range" min="0" max="0.6" step="0.01" value="0.15">
-
-    <button id="reset" class="secondary">重設</button>
-    <div id="status">載入中…</div>
-    <p class="hint"><a href="linelight.html">線光源頁面</a>　<a href="index.html">RTI 檢視器</a></p>
-  </div>
-</div>
-<script>
-window.__showErr = msg => {
-  const el = document.getElementById('err');
-  if (el) { el.textContent = String(msg); el.style.display = 'block'; }
-};
-window.addEventListener('error', ev => window.__showErr('錯誤：' + (ev.message || ev.error)));
-window.addEventListener('unhandledrejection', ev => window.__showErr('錯誤：' + ((ev.reason && ev.reason.message) || ev.reason)));
-</script>
-<script>
 (async function () {
   const GW = 48;
   const $ = id => document.getElementById(id);
@@ -175,8 +26,7 @@ ${navigator.userAgent}`;
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
 
   const candidates = qs.has('rti') ? [qs.get('rti')]
-    : (isTouch || maxTex < 4096) ? ['rti_rbf_flat_quarter', 'rti_rbf_flat_half', 'rti_rbf_flat', 'rti_rbf']
-                                 : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf_flat_quarter', 'rti_rbf'];
+    : (isTouch || maxTex < 4096) ? ['rti_rbf_flat_half', 'rti_rbf_flat', 'rti_rbf'] : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf'];
   let RTI = null, info = null;
   for (const name of candidates) {
     const r = await fetch('../' + name + '/info.json');
@@ -201,42 +51,8 @@ ${navigator.userAgent}`;
   for (let l = 0; l < NL; l++) { minLz = Math.min(minLz, lights[3 * l + 2]); maxLz = Math.max(maxLz, lights[3 * l + 2]); }
   const minEl = Math.asin(minLz) * 180 / Math.PI, maxEl = Math.asin(maxLz) * 180 / Math.PI;
 
-  const barInfo = document.getElementById('barInfo');
-  const progBar = document.getElementById('prog');
-  const loaded = { bytes: 0, done: 0, files: 4 };
-  function showProgress(current) {
-    const frac = Math.min(1, (loaded.done + current) / loaded.files);
-    progBar.style.width = (frac * 100).toFixed(1) + '%';
-    barInfo.textContent = '載入中… ' + Math.round(frac * 100) + '%（' + (loaded.bytes / 1048576).toFixed(1) + ' MB）';
-  }
-  async function loadImage(src) {
-    const res = await fetch(src);
-    if (!res.ok) throw new Error(src.split('/').pop() + ' 載入失敗（' + res.status + '）');
-    const total = +res.headers.get('content-length') || 0;
-    let bitmap;
-    if (res.body && res.body.getReader) {
-      const reader = res.body.getReader();
-      const chunks = [];
-      let got = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        got += value.length;
-        loaded.bytes += value.length;
-        showProgress(total ? got / total : 0);
-      }
-      bitmap = new Blob(chunks);
-    } else {
-      bitmap = await res.blob();
-    }
-    loaded.done += 1;
-    showProgress(0);
-    try {
-      return await createImageBitmap(bitmap, { colorSpaceConversion: 'none' });
-    } catch (e) {
-      return await createImageBitmap(bitmap);
-    }
+  function loadImage(src) {
+    return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
   }
   function texParams(filter, wrap) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
@@ -652,10 +468,6 @@ void main() {
     const ang = rad((screen.orientation && screen.orientation.angle) || window.orientation || 0);
     setTarget(dx * Math.cos(ang) + dy * Math.sin(ang), -dx * Math.sin(ang) + dy * Math.cos(ang));
   }
-  function finishLoading() {
-    progBar.style.width = '0';
-    barInfo.textContent = isTouch ? '傾斜手機改變光線・右上角可調整' : '滑鼠移到畫上改變角度・右側可調整';
-  }
   function updateGyroUi() {
     const supported = 'DeviceOrientationEvent' in window;
     $('gyroEnable').hidden = !supported || gyroActive || !isTouch;
@@ -714,7 +526,6 @@ void main() {
   status.textContent = `RTI：${RTI.replace(/\.\.\/|\//g, '')}（${W}×${H}，${NL} 個拍攝光向）\n點光源，距離衰減 1/d²\n畫紙外觀用相對光向查 RTI（假設與觀看角度無關）` +
     (hasMask ? '\n金紙反光為合成，依實際觀看方向計算' : '\n找不到 gold_mask.png，金紙反光停用');
   schedule(true);
-  finishLoading();
   if (qs.get('debug') === '1') {
     window.__showErr(`裝置診斷
 WebGL2：可用
@@ -734,6 +545,3 @@ ${navigator.userAgent}`);
 ${navigator.userAgent}`);
   console.error(err);
 });
-</script>
-</body>
-</html>

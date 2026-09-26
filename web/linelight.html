@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gold Texture Line Light</title>
+<title>一息 A Single Breath・林郁珮</title>
 <style>
   :root { --bg:#121212; --panel:#1c1c1c; --fg:#e8e8e8; --muted:#9a9a9a; --accent:#d9a441; }
   * { box-sizing: border-box; }
@@ -26,14 +26,24 @@
   .row button { margin-top:0; }
   .hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
   #status { margin-top:14px; color:var(--muted); font-size:12px; white-space:pre-line; }
+  .bar { position:fixed; left:0; right:0; bottom:0; z-index:7; display:flex; gap:12px;
+    align-items:center; justify-content:space-between; background:#e9e9e9; color:#333;
+    font-size:12px; line-height:1.4; padding:7px 14px;
+    padding-bottom:calc(7px + env(safe-area-inset-bottom)); }
+  .bar b { font-weight:600; }
+  .bar span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   @media (max-width: 700px) { .wrap { flex-direction:column; } .panel { width:auto; } .stage { height:60vh; } }
 </style>
 </head>
 <body>
+<div class="bar">
+  <span><b>一息</b>　A Single Breath　·　林郁珮</span>
+  <span>線光源重打光</span>
+</div>
 <div class="wrap">
   <div class="stage"><canvas id="c"></canvas></div>
   <div class="panel">
-    <h1>線光源重打光</h1>
+    <h1>一息　線光源重打光</h1>
     <div class="row">
       <button id="zin" class="secondary">放大</button>
       <button id="zout" class="secondary">縮小</button>
