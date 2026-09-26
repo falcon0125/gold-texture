@@ -31,6 +31,9 @@
   #status { margin-top:14px; color:var(--muted); font-size:12px; white-space:pre-line; }
   a { color:var(--accent); }
   body.embed .panel { display:none; }
+  .err { position:absolute; left:12px; right:12px; bottom:12px; z-index:6; display:none;
+    background:rgba(58,22,18,.95); color:#ffd9cc; padding:12px 14px; border-radius:8px;
+    font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; max-height:60%; overflow:auto; }
   .hamburger { position:absolute; top:12px; right:12px; z-index:3; width:44px; height:44px; padding:0; margin:0; display:none;
     align-items:center; justify-content:center; background:rgba(20,20,20,.72); color:var(--fg); border-radius:10px; }
   .hamburger span { display:block; width:20px; height:2px; background:currentColor; box-shadow:0 -6px 0 currentColor, 0 6px 0 currentColor; }
@@ -56,6 +59,7 @@
 <div class="wrap">
   <div class="stage">
     <canvas id="c"></canvas>
+    <div id="err" class="err"></div>
     <button id="gyroBtn" class="overlay" hidden>點一下啟用陀螺儀</button>
     <button id="menu" class="hamburger" aria-label="開啟調整介面" aria-expanded="false"><span></span></button>
   </div>
@@ -123,6 +127,14 @@
   </div>
 </div>
 <script>
+window.__showErr = msg => {
+  const el = document.getElementById('err');
+  if (el) { el.textContent = String(msg); el.style.display = 'block'; }
+};
+window.addEventListener('error', ev => window.__showErr('錯誤：' + (ev.message || ev.error)));
+window.addEventListener('unhandledrejection', ev => window.__showErr('錯誤：' + ((ev.reason && ev.reason.message) || ev.reason)));
+</script>
+<script>
 (async function () {
   const GW = 48;
   const $ = id => document.getElementById(id);
@@ -140,7 +152,13 @@
   const isTouch = matchMedia('(pointer: coarse)').matches;
   const canvas = $('c');
   const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
-  if (!gl) { status.textContent = '這個瀏覽器不支援 WebGL2'; return; }
+  if (!gl) {
+    const msg = `這個瀏覽器不支援 WebGL2，無法顯示。
+${navigator.userAgent}`;
+    status.textContent = msg;
+    window.__showErr(msg);
+    return;
+  }
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
 
   const candidates = qs.has('rti') ? [qs.get('rti')]
@@ -644,10 +662,23 @@ void main() {
   status.textContent = `RTI：${RTI.replace(/\.\.\/|\//g, '')}（${W}×${H}，${NL} 個拍攝光向）\n點光源，距離衰減 1/d²\n畫紙外觀用相對光向查 RTI（假設與觀看角度無關）` +
     (hasMask ? '\n金紙反光為合成，依實際觀看方向計算' : '\n找不到 gold_mask.png，金紙反光停用');
   schedule(true);
+  if (qs.get('debug') === '1') {
+    window.__showErr(`裝置診斷
+WebGL2：可用
+最大貼圖：${maxTex}
+觸控裝置：${isTouch}
+RTI：${RTI}（${W}×${H}）
+畫布：${canvas.width}×${canvas.height}
+${navigator.userAgent}`);
+  }
   if (qs.get('swing') === 'x') toggleSwing('tx');
   if (qs.get('swing') === 'y') toggleSwing('ty');
 })().catch(err => {
-  document.getElementById('status').textContent = '錯誤：' + err.message;
+  const msg = '錯誤：' + err.message;
+  const st = document.getElementById('status');
+  if (st) st.textContent = msg;
+  window.__showErr(`${msg}
+${navigator.userAgent}`);
   console.error(err);
 });
 </script>
