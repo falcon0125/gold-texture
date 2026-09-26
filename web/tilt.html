@@ -113,8 +113,8 @@
     <h2>光源與相機</h2>
     <label>光源方位（0° 右、90° 上、180° 左） <b id="vlaz"></b></label>
     <input id="laz" type="range" min="0" max="360" step="1" value="180">
-    <label>光源仰角 <b id="vlel"></b></label>
-    <input id="lel" type="range" min="5" max="85" step="0.5" value="50">
+    <label>光源仰角（90° = 垂直螢幕） <b id="vlel"></b></label>
+    <input id="lel" type="range" min="5" max="90" step="0.5" value="50">
     <label>光源距離（畫寬倍數） <b id="vldist"></b></label>
     <input id="ldist" type="range" min="0.6" max="6" step="0.05" value="2.5">
     <label>相機距離（畫寬倍數） <b id="vcamd"></b></label>
@@ -161,6 +161,9 @@ window.addEventListener('unhandledrejection', ev => window.__showErr('錯誤：'
   ids.forEach(k => { if (qs.has(k)) $(k).value = qs.get(k); });
   checks.forEach(k => { if (qs.has(k)) $(k).checked = qs.get(k) === '1'; });
   if (qs.has('tx') || qs.has('ty')) $('interact').checked = false;
+  const isTouchInit = matchMedia('(pointer: coarse)').matches;
+  // 手機預設讓光垂直螢幕，傾斜時以啟用當下的姿勢為基準改變相對光向
+  if (isTouchInit && !qs.has('lel')) $('lel').value = 90;
 
   const isTouch = matchMedia('(pointer: coarse)').matches;
   const canvas = $('c');
