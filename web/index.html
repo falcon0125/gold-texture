@@ -33,6 +33,7 @@
         normals: false
       });
       lime.addLayer('rti', layer);
+      window.lime = lime;  // 方便除錯與自動化測試
 
       OpenLIME.Skin.setUrl('openlime/skin/skin.svg');
       const ui = new OpenLIME.UIBasic(lime, { showLightDirections: true });
