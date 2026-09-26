@@ -175,8 +175,7 @@ ${navigator.userAgent}`;
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
 
   const candidates = qs.has('rti') ? [qs.get('rti')]
-    : (isTouch || maxTex < 4096) ? ['rti_rbf_flat_quarter', 'rti_rbf_flat_half', 'rti_rbf_flat', 'rti_rbf']
-                                 : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf_flat_quarter', 'rti_rbf'];
+    : ['rti_rbf_flat_quarter', 'rti_rbf_flat_half', 'rti_rbf_flat', 'rti_rbf'];
   let RTI = null, info = null;
   for (const name of candidates) {
     const r = await fetch('../' + name + '/info.json');
@@ -203,11 +202,11 @@ ${navigator.userAgent}`;
 
   const barInfo = document.getElementById('barInfo');
   const progBar = document.getElementById('prog');
-  const loaded = { bytes: 0, done: 0, files: 4 };
+  const loaded = { bytes: 0, done: 0, files: 4, label: '載入中…' };
   function showProgress(current) {
     const frac = Math.min(1, (loaded.done + current) / loaded.files);
     progBar.style.width = (frac * 100).toFixed(1) + '%';
-    barInfo.textContent = '載入中… ' + Math.round(frac * 100) + '%（' + (loaded.bytes / 1048576).toFixed(1) + ' MB）';
+    barInfo.textContent = loaded.label + ' ' + Math.round(frac * 100) + '%（' + (loaded.bytes / 1048576).toFixed(1) + ' MB）';
   }
   async function loadImage(src) {
     const res = await fetch(src);
@@ -715,6 +714,41 @@ void main() {
     (hasMask ? '\n金紙反光為合成，依實際觀看方向計算' : '\n找不到 gold_mask.png，金紙反光停用');
   schedule(true);
   finishLoading();
+
+  async function upgradeQuality() {
+    if (qs.has('rti')) return;
+    const nextOf = { rti_rbf_flat_quarter: 'rti_rbf_flat_half', rti_rbf_flat_half: 'rti_rbf_flat' };
+    let current = RTI.replace(/\.\.\/|\//g, '');
+    for (;;) {
+      const better = nextOf[current];
+      if (!better) return;
+      let bi;
+      try {
+        const r = await fetch('../' + better + '/info.json');
+        if (!r.ok) return;
+        bi = await r.json();
+      } catch (e) { return; }
+      loaded.done = 0; loaded.files = nPlaneImgs; loaded.bytes = 0; loaded.label = '提升畫質中…';
+      try {
+        for (let i = 0; i < nPlaneImgs; i++) {
+          const im = await loadImage('../' + better + '/plane_' + i + '.' + bi.format);
+          gl.activeTexture(gl.TEXTURE0 + i);
+          gl.bindTexture(gl.TEXTURE_2D, planeTex[i]);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, im);
+          gl.generateMipmap(gl.TEXTURE_2D);
+        }
+      } catch (e) { finishLoading(); return; }
+      gl.uniform2f(U('noiseScale'), bi.width / (NZ * 2), bi.height / (NZ * 2));
+      schedule(false);
+      current = better;
+      barInfo.textContent = '已提升畫質（' + bi.width + '×' + bi.height + '）';
+      progBar.style.width = '0';
+      setTimeout(finishLoading, 2500);
+      if (!isTouch) continue;
+      return;
+    }
+  }
+  upgradeQuality();
   if (qs.get('debug') === '1') {
     window.__showErr(`裝置診斷
 WebGL2：可用
