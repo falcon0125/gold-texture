@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Texture Tilt</title>
+<style>
+  :root { --bg:#121212; --panel:#1c1c1c; --fg:#e8e8e8; --muted:#9a9a9a; --accent:#d9a441; --warn:#e8734a; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, "Noto Sans TC", sans-serif; }
+  .wrap { display:flex; height:100%; }
+  .stage { flex:1; min-width:0; position:relative; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+  canvas.dragging { cursor:grabbing; }
+  .panel { width:300px; background:var(--panel); padding:16px; overflow:auto; }
+  h1 { font-size:15px; margin:0 0 12px; font-weight:600; }
+  h2 { font-size:13px; margin:22px 0 0; padding-top:14px; border-top:1px solid #333; font-weight:600; }
+  label { display:block; margin:14px 0 4px; color:var(--muted); font-size:12px; }
+  label b { color:var(--fg); font-weight:500; float:right; font-variant-numeric:tabular-nums; }
+  label.check { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; cursor:pointer; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  input[type=checkbox] { accent-color:var(--accent); width:16px; height:16px; }
+  button { width:100%; margin-top:8px; padding:8px; background:var(--accent); color:#111; border:0; border-radius:6px; font-weight:600; cursor:pointer; }
+  button.secondary { background:#333; color:var(--fg); }
+  button.overlay { position:absolute; left:50%; bottom:20px; transform:translateX(-50%); width:auto; padding:10px 18px; z-index:2; box-shadow:0 2px 12px rgba(0,0,0,.5); }
+  .row { display:flex; gap:6px; }
+  .row button { margin-top:0; }
+  .hint { color:var(--muted); font-size:12px; margin:6px 0 0; white-space:pre-line; }
+  #relel { margin-top:12px; padding:8px; border-radius:6px; background:#262626; font-size:12px; white-space:pre-line; }
+  #relel.warn { background:#3a2219; color:var(--warn); }
+  #status { margin-top:14px; color:var(--muted); font-size:12px; white-space:pre-line; }
+  a { color:var(--accent); }
+  body.embed .panel { display:none; }
+  .hamburger { position:absolute; top:12px; right:12px; z-index:3; width:44px; height:44px; padding:0; margin:0; display:none;
+    align-items:center; justify-content:center; background:rgba(20,20,20,.72); color:var(--fg); border-radius:10px; }
+  .hamburger span { display:block; width:20px; height:2px; background:currentColor; box-shadow:0 -6px 0 currentColor, 0 6px 0 currentColor; }
+  .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:4; display:none; }
+  .panel .close { display:none; }
+  body.embed .hamburger, body.embed .backdrop { display:none !important; }
+  @media (max-width: 700px) {
+    .wrap { flex-direction:column; }
+    .stage { flex:1; height:100%; }
+    .hamburger { display:flex; }
+    .panel { position:fixed; top:0; right:0; bottom:0; width:min(88vw, 340px); z-index:5;
+      transform:translateX(100%); transition:transform .25s ease;
+      padding-top:calc(16px + env(safe-area-inset-top)); box-shadow:-8px 0 24px rgba(0,0,0,.5); }
+    body.panel-open .panel { transform:none; }
+    body.panel-open .backdrop { display:block; }
+    .panel .close { display:block; position:absolute; top:10px; right:12px; width:36px; height:36px;
+      padding:0; margin:0; background:#333; color:var(--fg); font-size:18px; line-height:1; }
+    h1 { padding-right:44px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="c"></canvas>
+    <button id="gyroBtn" class="overlay" hidden>點一下啟用陀螺儀</button>
+    <button id="menu" class="hamburger" aria-label="開啟調整介面" aria-expanded="false"><span></span></button>
+  </div>
+  <div id="backdrop" class="backdrop"></div>
+  <div class="panel">
+    <button id="panelClose" class="close" aria-label="關閉調整介面">✕</button>
+    <h1>固定光源・傾斜畫紙</h1>
+    <div class="row">
+      <button id="zin" class="secondary">放大</button>
+      <button id="zout" class="secondary">縮小</button>
+      <button id="zreset" class="secondary">全圖</button>
+    </div>
+    <p class="hint">滾輪或雙指縮放、拖曳平移、雙擊回到全圖　<b id="vzoom"></b></p>
+
+    <h2>互動</h2>
+    <label class="check"><input id="interact" type="checkbox" checked> 滑鼠／陀螺儀控制傾斜</label>
+    <label class="check"><input id="invert" type="checkbox"> 反轉方向</label>
+    <div class="row" style="margin-top:8px">
+      <button id="gyroEnable" class="secondary" hidden>啟用陀螺儀</button>
+      <button id="recenter" class="secondary" hidden>重新校正水平</button>
+    </div>
+    <p class="hint" id="interactHint"></p>
+
+    <label>畫紙左右傾斜 <b id="vtx"></b></label>
+    <input id="tx" type="range" min="-45" max="45" step="any" value="0">
+    <label>畫紙上下傾斜 <b id="vty"></b></label>
+    <input id="ty" type="range" min="-45" max="45" step="any" value="0">
+    <label>最大傾斜／搖擺幅度 <b id="vamp"></b></label>
+    <input id="amp" type="range" min="0" max="45" step="0.5" value="25">
+    <label>透視變形比例（手機建議 0.3） <b id="vpersp"></b></label>
+    <input id="persp" type="range" min="0" max="1" step="0.01" value="1">
+    <div class="row" style="margin-top:8px">
+      <button id="swingX">▶ 左右搖擺</button>
+      <button id="swingY" class="secondary">▶ 上下搖擺</button>
+    </div>
+    <div id="relel"></div>
+
+    <h2>光源與相機</h2>
+    <label>光源方位（0° 右、90° 上、180° 左） <b id="vlaz"></b></label>
+    <input id="laz" type="range" min="0" max="360" step="1" value="180">
+    <label>光源仰角 <b id="vlel"></b></label>
+    <input id="lel" type="range" min="5" max="85" step="0.5" value="50">
+    <label>光源距離（畫寬倍數） <b id="vldist"></b></label>
+    <input id="ldist" type="range" min="0.6" max="6" step="0.05" value="2.5">
+    <label>相機距離（畫寬倍數） <b id="vcamd"></b></label>
+    <input id="camd" type="range" min="1.2" max="8" step="0.05" value="3">
+    <label>曝光 <b id="vexp"></b></label>
+    <input id="exp" type="range" min="-3" max="3" step="0.05" value="0">
+    <label>光向內插平滑度 <b id="vsigma"></b></label>
+    <input id="sigma" type="range" min="0.08" max="0.6" step="0.01" value="0.22">
+
+    <h2>金紙反光（合成）</h2>
+    <label class="check"><input id="gold" type="checkbox" checked> 啟用金紙反光</label>
+    <label class="check"><input id="showMask" type="checkbox"> 顯示金紙遮罩</label>
+    <label>反光強度 <b id="vgstr"></b></label>
+    <input id="gstr" type="range" min="0" max="3" step="0.01" value="0.6">
+    <label>光澤銳利度 <b id="vshin"></b></label>
+    <input id="shin" type="range" min="1" max="3" step="0.01" value="2">
+    <label>皺褶閃點 <b id="vspark"></b></label>
+    <input id="spark" type="range" min="0" max="0.6" step="0.01" value="0.15">
+
+    <button id="reset" class="secondary">重設</button>
+    <div id="status">載入中…</div>
+    <p class="hint"><a href="linelight.html">線光源頁面</a>　<a href="index.html">RTI 檢視器</a></p>
+  </div>
+</div>
+<script>
+(async function () {
+  const GW = 48;
+  const $ = id => document.getElementById(id);
+  const status = $('status');
+  const ids = ['tx', 'ty', 'amp', 'persp', 'laz', 'lel', 'ldist', 'camd', 'exp', 'sigma', 'gstr', 'shin', 'spark'];
+  const checks = ['gold', 'showMask', 'interact', 'invert'];
+  const defaults = Object.fromEntries(ids.map(k => [k, $(k).value]));
+  const checkDefaults = Object.fromEntries(checks.map(k => [k, $(k).checked]));
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('embed') === '1') document.body.classList.add('embed');
+  ids.forEach(k => { if (qs.has(k)) $(k).value = qs.get(k); });
+  checks.forEach(k => { if (qs.has(k)) $(k).checked = qs.get(k) === '1'; });
+  if (qs.has('tx') || qs.has('ty')) $('interact').checked = false;
+
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const canvas = $('c');
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
+  if (!gl) { status.textContent = '這個瀏覽器不支援 WebGL2'; return; }
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+
+  const candidates = qs.has('rti') ? [qs.get('rti')]
+    : (isTouch || maxTex < 4096) ? ['rti_rbf_flat_half', 'rti_rbf_flat', 'rti_rbf'] : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf'];
+  let RTI = null, info = null;
+  for (const name of candidates) {
+    const r = await fetch('../' + name + '/info.json');
+    if (r.ok) { RTI = '../' + name + '/'; info = await r.json(); break; }
+  }
+  if (!info) throw new Error('找不到 RTI 資料');
+  let goldColor = [1.0, 0.72, 0.32];
+  try { goldColor = (await (await fetch('gold.json')).json()).color_linear_rgb; } catch (e) {}
+  const W = info.width, H = info.height, NL = info.lights.length / 3, NP = info.nplanes;
+  const mat = info.materials[0];
+  const lights = new Float32Array(info.lights);
+  const B = new Float32Array((NP + 1) * NL * 3);
+  for (let p = 0; p <= NP; p++)
+    for (let l = 0; l < NL; l++)
+      for (let c = 0; c < 3; c++) {
+        const o = 3 * (p * NL + l) + c;
+        B[o] = p === 0 ? info.basis[o] / 255 : (info.basis[o] - 127) / mat.range[p - 1];
+      }
+  const GH = Math.round(GW * H / W);
+  const aspect = H / W;
+  let minLz = 1, maxLz = 0;
+  for (let l = 0; l < NL; l++) { minLz = Math.min(minLz, lights[3 * l + 2]); maxLz = Math.max(maxLz, lights[3 * l + 2]); }
+  const minEl = Math.asin(minLz) * 180 / Math.PI, maxEl = Math.asin(maxLz) * 180 / Math.PI;
+
+  function loadImage(src) {
+    return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  }
+  function texParams(filter, wrap) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.LINEAR_MIPMAP_LINEAR ? gl.LINEAR : filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+  }
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  const nPlaneImgs = Math.ceil(NP / 3);
+  const planeTex = [];
+  for (let i = 0; i < nPlaneImgs; i++) {
+    const im = await loadImage(RTI + 'plane_' + i + '.' + info.format);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, im);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    texParams(gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+    planeTex.push(t);
+  }
+
+  const maskTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  let hasMask = true;
+  try {
+    const mi = await loadImage('gold_mask.png');
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, mi);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    texParams(gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+  } catch (e) {
+    hasMask = false;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+    texParams(gl.NEAREST, gl.CLAMP_TO_EDGE);
+  }
+
+  const NZ = 512;
+  const noise = new Uint8Array(NZ * NZ * 3);
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  for (let i = 0; i < NZ * NZ; i++) {
+    const u = Math.max(rnd(), 1e-6), v = rnd();
+    const r = Math.sqrt(-2 * Math.log(u)), a = 2 * Math.PI * v;
+    noise[3 * i] = Math.max(0, Math.min(255, 127.5 + 42 * r * Math.cos(a)));
+    noise[3 * i + 1] = Math.max(0, Math.min(255, 127.5 + 42 * r * Math.sin(a)));
+  }
+  const noiseTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, noiseTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, NZ, NZ, 0, gl.RGB, gl.UNSIGNED_BYTE, noise);
+  texParams(gl.NEAREST, gl.REPEAT);
+
+  const wTex = [], wData = [];
+  for (let p = 0; p <= NP; p++) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, GW, GH);
+    texParams(gl.LINEAR, gl.CLAMP_TO_EDGE);
+    wTex.push(t);
+    wData.push(new Float32Array(GW * GH * 4));
+  }
+
+  const vs = `#version 300 es
+uniform mat3 R; uniform mat4 PV; uniform float aspect; uniform vec3 zoomPan;
+in vec2 pos; out vec2 uv; out vec3 plocal;
+void main() {
+  uv = vec2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+  plocal = vec3(pos.x * 0.5, pos.y * 0.5 * aspect, 0.0);
+  vec4 c = PV * vec4(R * plocal, 1.0);
+  c.xy = (c.xy - zoomPan.yz * c.w) * zoomPan.x;
+  gl_Position = c;
+}`;
+  let fs = `#version 300 es
+precision highp float;
+in vec2 uv; in vec3 plocal; out vec4 outColor;
+uniform float bias[${NP}]; uniform float scale[${NP}]; uniform float expo;
+uniform sampler2D GM; uniform sampler2D NZ;
+uniform vec3 Lloc; uniform vec3 Cloc; uniform float iref;
+uniform vec3 goldColor; uniform float goldStr; uniform float shin; uniform float spark;
+uniform vec2 noiseScale; uniform int goldOn; uniform int showMask;
+`;
+  for (let i = 0; i < nPlaneImgs; i++) fs += `uniform sampler2D P${i};\n`;
+  for (let p = 0; p <= NP; p++) fs += `uniform sampler2D W${p};\n`;
+  fs += `
+vec3 s2l(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 l2s(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main() {
+  vec4 w0 = texture(W0, uv);
+  vec3 col = w0.rgb;
+`;
+  for (let i = 0; i < nPlaneImgs; i++) fs += `  vec3 t${i} = texture(P${i}, uv).rgb;\n`;
+  for (let k = 0; k < NP; k++) {
+    const comp = 'rgb'[k % 3];
+    fs += `  col += (t${Math.floor(k / 3)}.${comp} - bias[${k}]) * scale[${k}] * texture(W${k + 1}, uv).rgb;\n`;
+  }
+  fs += `
+  vec3 lin = s2l(clamp(col, 0.0, 1.0)) * w0.a;
+  float m = texture(GM, uv).r;
+  if (goldOn == 1 && m > 0.001) {
+    vec2 tilt = (texture(NZ, uv * noiseScale).rg * 2.0 - 1.0) * spark * 3.0;
+    vec3 N = normalize(vec3(tilt, 1.0));
+    vec3 d = Lloc - plocal;
+    float d2 = dot(d, d);
+    vec3 Ld = d / sqrt(d2);
+    vec3 Vd = normalize(Cloc - plocal);
+    if (Ld.z > 0.0 && Vd.z > 0.0) {
+      vec3 Hv = normalize(Ld + Vd);
+      float s = pow(max(dot(N, Hv), 0.0), shin) * max(dot(N, Ld), 0.0) / d2;
+      lin += m * goldStr * goldColor * s * (shin + 8.0) / (8.0 * 3.14159265) / iref;
+    }
+  }
+  lin *= expo;
+  vec3 outc = l2s(clamp(lin, 0.0, 1.0));
+  if (showMask == 1) outc = mix(outc, vec3(1.0, 0.1, 0.1), m * 0.7);
+  outColor = vec4(outc, 1.0);
+}`;
+  function compile(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'pos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = name => gl.getUniformLocation(prog, name);
+  gl.uniform1fv(U('bias'), new Float32Array(mat.bias));
+  gl.uniform1fv(U('scale'), new Float32Array(mat.scale));
+  gl.uniform1f(U('aspect'), aspect);
+  gl.uniform3fv(U('goldColor'), new Float32Array(goldColor));
+  gl.uniform2f(U('noiseScale'), W / (NZ * 2), H / (NZ * 2));
+  let unit = 0;
+  function bindUnit(tex, name) {
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(U(name), unit++);
+  }
+  for (let i = 0; i < nPlaneImgs; i++) bindUnit(planeTex[i], 'P' + i);
+  for (let p = 0; p <= NP; p++) bindUnit(wTex[p], 'W' + p);
+  bindUnit(maskTex, 'GM');
+  bindUnit(noiseTex, 'NZ');
+  const scratchUnit = unit;
+
+  const e = new Float64Array(NL);
+  function computeWeights(Lloc, sigma, ref) {
+    const sig2 = sigma * sigma;
+    for (let gy = 0; gy < GH; gy++) {
+      const Y = (0.5 - (gy + 0.5) / GH) * aspect;
+      for (let gx = 0; gx < GW; gx++) {
+        const X = (gx + 0.5) / GW - 0.5;
+        const idx = (gy * GW + gx) * 4;
+        const dx = Lloc[0] - X, dy = Lloc[1] - Y, dz = Lloc[2];
+        const d2 = dx * dx + dy * dy + dz * dz, inv = 1 / Math.sqrt(d2);
+        const lx = dx * inv, ly = dy * inv, lz = dz * inv;
+        if (lz <= 0.001) {
+          for (let p = 0; p <= NP; p++) wData[p].fill(0, idx, idx + 4);
+          continue;
+        }
+        let dmin = Infinity;
+        for (let l = 0; l < NL; l++) {
+          const q = (lx - lights[3 * l]) ** 2 + (ly - lights[3 * l + 1]) ** 2 + (lz - lights[3 * l + 2]) ** 2;
+          e[l] = q; if (q < dmin) dmin = q;
+        }
+        let sum = 0;
+        for (let l = 0; l < NL; l++) { e[l] = Math.exp(-(e[l] - dmin) / sig2); sum += e[l]; }
+        for (let p = 0; p <= NP; p++) {
+          const d = wData[p];
+          for (let c = 0; c < 3; c++) {
+            let s = 0;
+            for (let l = 0; l < NL; l++) s += e[l] * B[3 * (p * NL + l) + c];
+            d[idx + c] = s / sum;
+          }
+          d[idx + 3] = 1;
+        }
+        // below the lowest captured elevation the RBF blend can't darken further, so continue the cosine falloff here
+        wData[0][idx + 3] = Math.min(1, lz / minLz) / d2 / ref;
+      }
+    }
+    gl.activeTexture(gl.TEXTURE0 + scratchUnit);
+    for (let p = 0; p <= NP; p++) {
+      gl.bindTexture(gl.TEXTURE_2D, wTex[p]);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GW, GH, gl.RGBA, gl.FLOAT, wData[p]);
+    }
+  }
+
+  const rad = d => d * Math.PI / 180;
+  function rotation(txDeg, tyDeg) {
+    const a = rad(txDeg), b = rad(tyDeg);
+    const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+    const Ry = [[ca, 0, sa], [0, 1, 0], [-sa, 0, ca]];
+    const Rx = [[1, 0, 0], [0, cb, -sb], [0, sb, cb]];
+    return Ry.map(row => [0, 1, 2].map(j => row[0] * Rx[0][j] + row[1] * Rx[1][j] + row[2] * Rx[2][j]));
+  }
+  const applyT = (Rm, v) => [0, 1, 2].map(j => Rm[0][j] * v[0] + Rm[1][j] * v[1] + Rm[2][j] * v[2]);
+  function mul4(a, b) {
+    const o = new Float32Array(16);
+    for (let c = 0; c < 4; c++)
+      for (let r = 0; r < 4; r++) {
+        let s = 0;
+        for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+        o[c * 4 + r] = s;
+      }
+    return o;
+  }
+
+  const view = { z: 1, px: 0, py: 0 };
+  if (qs.has('z')) view.z = parseFloat(qs.get('z'));
+  if (qs.has('px')) view.px = parseFloat(qs.get('px'));
+  if (qs.has('py')) view.py = parseFloat(qs.get('py'));
+  function clampView() {
+    view.z = Math.min(24, Math.max(1, view.z));
+    view.px = Math.min(1, Math.max(-1, view.px));
+    view.py = Math.min(1, Math.max(-1, view.py));
+  }
+  clampView();
+  function zoomAt(mx, my, f) {
+    const nx = mx * 2 - 1, ny = 1 - my * 2;
+    const qx = nx / view.z + view.px, qy = ny / view.z + view.py;
+    view.z = Math.min(24, Math.max(1, view.z * f));
+    view.px = qx - nx / view.z;
+    view.py = qy - ny / view.z;
+    clampView();
+    schedule(false);
+  }
+
+  function values() {
+    return Object.fromEntries(ids.map(k => [k, parseFloat($(k).value)]));
+  }
+  let camd = 3;
+  function updateScene() {
+    const v = values();
+    $('vtx').textContent = v.tx.toFixed(1) + '°';
+    $('vty').textContent = v.ty.toFixed(1) + '°';
+    $('vamp').textContent = '±' + v.amp.toFixed(1) + '°';
+    $('vpersp').textContent = v.persp.toFixed(2);
+    $('vlaz').textContent = v.laz.toFixed(0) + '°';
+    $('vlel').textContent = v.lel.toFixed(1) + '°';
+    $('vldist').textContent = v.ldist.toFixed(2);
+    $('vcamd').textContent = v.camd.toFixed(2);
+    $('vexp').textContent = (v.exp >= 0 ? '+' : '') + v.exp.toFixed(1) + ' EV';
+    $('vsigma').textContent = v.sigma.toFixed(2);
+    $('vgstr').textContent = v.gstr.toFixed(2);
+    const shin = Math.pow(10, v.shin);
+    $('vshin').textContent = shin.toFixed(0);
+    $('vspark').textContent = v.spark.toFixed(2);
+
+    camd = v.camd;
+    const Rm = rotation(v.tx, v.ty);
+    const Rgeo = rotation(v.tx * v.persp, v.ty * v.persp);
+    const Lw = [v.ldist * Math.cos(rad(v.lel)) * Math.cos(rad(v.laz)), v.ldist * Math.cos(rad(v.lel)) * Math.sin(rad(v.laz)), v.ldist * Math.sin(rad(v.lel))];
+    const Lloc = applyT(Rm, Lw);
+    const Cloc = applyT(Rm, [0, 0, v.camd]);
+    const ref = 1 / (v.ldist * v.ldist);
+    computeWeights(Lloc, v.sigma, ref);
+
+    gl.uniformMatrix3fv(U('R'), false, new Float32Array([Rgeo[0][0], Rgeo[1][0], Rgeo[2][0], Rgeo[0][1], Rgeo[1][1], Rgeo[2][1], Rgeo[0][2], Rgeo[1][2], Rgeo[2][2]]));
+    gl.uniform3fv(U('Lloc'), new Float32Array(Lloc));
+    gl.uniform3fv(U('Cloc'), new Float32Array(Cloc));
+    gl.uniform1f(U('iref'), ref);
+    gl.uniform1f(U('expo'), Math.pow(2, v.exp));
+    gl.uniform1f(U('goldStr'), v.gstr);
+    gl.uniform1f(U('shin'), shin);
+    gl.uniform1f(U('spark'), v.spark);
+    gl.uniform1i(U('goldOn'), $('gold').checked ? 1 : 0);
+    gl.uniform1i(U('showMask'), $('showMask').checked ? 1 : 0);
+
+    const n = Math.hypot(...Lloc);
+    const el = Math.asin(Math.max(-1, Math.min(1, Lloc[2] / n))) * 180 / Math.PI;
+    const out = el < minEl || el > maxEl;
+    const box = $('relel');
+    box.className = out ? 'warn' : '';
+    box.textContent = `紙面中心的相對光線仰角 ${el.toFixed(0)}°（拍攝範圍 ${minEl.toFixed(0)}–${maxEl.toFixed(0)}°）` + (out ? '\n超出拍攝範圍，外觀為外插' : '');
+  }
+
+  function render() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = canvas.getBoundingClientRect();
+    const cw = Math.max(1, Math.round(r.width * dpr)), ch = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const casp = cw / ch;
+    const margin = 1.25;
+    const tanY = Math.max(0.5 * aspect * margin, 0.5 * margin / casp) / camd;
+    const f = 1 / tanY, near = 0.05, far = 100;
+    const P = new Float32Array([f / casp, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0]);
+    const T = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -camd, 1]);
+    gl.uniformMatrix4fv(U('PV'), false, mul4(P, T));
+    gl.uniform3f(U('zoomPan'), view.z, view.px, view.py);
+    $('vzoom').textContent = view.z.toFixed(1) + '×';
+    gl.viewport(0, 0, cw, ch);
+    gl.clearColor(0.07, 0.07, 0.07, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  let pending = false, sceneDirty = true;
+  function schedule(scene) {
+    if (scene) sceneDirty = true;
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      if (sceneDirty) { updateScene(); sceneDirty = false; }
+      render();
+    });
+  }
+  ids.forEach(k => $(k).addEventListener('input', () => schedule(true)));
+  checks.forEach(k => $(k).addEventListener('change', () => schedule(true)));
+
+  canvas.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    zoomAt((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, Math.exp(-ev.deltaY * 0.0015));
+  }, { passive: false });
+  const pointers = new Map();
+  let pinch = null;
+  canvas.addEventListener('pointerdown', ev => {
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    canvas.classList.add('dragging');
+    pinch = null;
+  });
+  canvas.addEventListener('pointermove', ev => {
+    if (!pointers.has(ev.pointerId)) return;
+    const r = canvas.getBoundingClientRect();
+    const prev = pointers.get(ev.pointerId);
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 1) {
+      view.px -= (ev.clientX - prev.x) / r.width * 2 / view.z;
+      view.py += (ev.clientY - prev.y) / r.height * 2 / view.z;
+      clampView();
+      schedule(false);
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = ((a.x + b.x) / 2 - r.left) / r.width, my = ((a.y + b.y) / 2 - r.top) / r.height;
+      if (pinch) zoomAt(mx, my, dist / pinch);
+      pinch = dist;
+    }
+  });
+  const endPointer = ev => {
+    pointers.delete(ev.pointerId);
+    pinch = null;
+    if (pointers.size === 0) canvas.classList.remove('dragging');
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  const resetView = () => { view.z = 1; view.px = 0; view.py = 0; schedule(false); };
+  canvas.addEventListener('dblclick', resetView);
+  $('zin').addEventListener('click', () => zoomAt(0.5, 0.5, 1.5));
+  $('zout').addEventListener('click', () => zoomAt(0.5, 0.5, 1 / 1.5));
+  $('zreset').addEventListener('click', resetView);
+
+  let swing = null, t0 = 0;
+  const PERIOD = 4000;
+  function tick(now) {
+    if (!swing) return;
+    const amp = parseFloat($('amp').value);
+    $(swing).value = (amp * Math.sin(2 * Math.PI * (now - t0) / PERIOD)).toFixed(2);
+    schedule(true);
+    requestAnimationFrame(tick);
+  }
+  function toggleSwing(axis) {
+    const btnX = $('swingX'), btnY = $('swingY');
+    swing = swing === axis ? null : axis;
+    btnX.textContent = swing === 'tx' ? '❚❚ 停止' : '▶ 左右搖擺';
+    btnY.textContent = swing === 'ty' ? '❚❚ 停止' : '▶ 上下搖擺';
+    btnX.className = swing === 'tx' || !swing ? '' : 'secondary';
+    btnY.className = swing === 'ty' ? '' : 'secondary';
+    if (swing) { t0 = performance.now(); requestAnimationFrame(tick); }
+  }
+  $('swingX').addEventListener('click', () => toggleSwing('tx'));
+  $('swingY').addEventListener('click', () => toggleSwing('ty'));
+
+  const target = { tx: 0, ty: 0 };
+  let smoothing = false;
+  function smoothTick() {
+    const cx = parseFloat($('tx').value), cy = parseFloat($('ty').value);
+    const nx = cx + (target.tx - cx) * 0.15, ny = cy + (target.ty - cy) * 0.15;
+    const done = Math.abs(target.tx - nx) < 0.05 && Math.abs(target.ty - ny) < 0.05;
+    $('tx').value = done ? target.tx : nx;
+    $('ty').value = done ? target.ty : ny;
+    schedule(true);
+    if (done) smoothing = false; else requestAnimationFrame(smoothTick);
+  }
+  function setTarget(tx, ty) {
+    const amp = parseFloat($('amp').value), s = $('invert').checked ? -1 : 1;
+    target.tx = Math.max(-amp, Math.min(amp, tx)) * s;
+    target.ty = Math.max(-amp, Math.min(amp, ty)) * s;
+    if (!smoothing) { smoothing = true; requestAnimationFrame(smoothTick); }
+  }
+  const canInteract = () => $('interact').checked && !swing;
+
+  let gyroActive = false, base = null;
+  canvas.addEventListener('pointermove', ev => {
+    if (ev.pointerType !== 'mouse' || pointers.size || gyroActive || !canInteract()) return;
+    const r = canvas.getBoundingClientRect();
+    const amp = parseFloat($('amp').value);
+    setTarget(((ev.clientX - r.left) / r.width * 2 - 1) * amp, ((ev.clientY - r.top) / r.height * 2 - 1) * amp);
+  });
+  canvas.addEventListener('pointerleave', ev => {
+    if (ev.pointerType === 'mouse' && !gyroActive && canInteract()) setTarget(0, 0);
+  });
+
+  function onOrient(ev) {
+    if (ev.beta == null || ev.gamma == null || !canInteract()) return;
+    if (!base) base = { beta: ev.beta, gamma: ev.gamma };
+    const dx = ev.gamma - base.gamma, dy = ev.beta - base.beta;
+    const ang = rad((screen.orientation && screen.orientation.angle) || window.orientation || 0);
+    setTarget(dx * Math.cos(ang) + dy * Math.sin(ang), -dx * Math.sin(ang) + dy * Math.cos(ang));
+  }
+  function updateGyroUi() {
+    const supported = 'DeviceOrientationEvent' in window;
+    $('gyroEnable').hidden = !supported || gyroActive || !isTouch;
+    $('recenter').hidden = !gyroActive;
+    $('gyroBtn').hidden = !supported || gyroActive || !isTouch || !$('interact').checked;
+    let hint = isTouch ? '傾斜手機即可轉動畫紙' : '滑鼠移到畫上，畫紙會朝游標傾斜';
+    if (isTouch && !window.isSecureContext) hint = '陀螺儀需要 HTTPS 網址才能使用';
+    $('interactHint').textContent = hint;
+  }
+  async function enableGyro() {
+    try {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const state = await DeviceOrientationEvent.requestPermission();
+        if (state !== 'granted') { $('interactHint').textContent = '陀螺儀權限被拒絕'; return; }
+      }
+      window.addEventListener('deviceorientation', onOrient);
+      gyroActive = true;
+      base = null;
+      $('persp').value = 0.3;
+      $('interact').checked = true;
+      schedule(true);
+    } catch (err) {
+      $('interactHint').textContent = '無法啟用陀螺儀：' + err.message;
+    }
+    updateGyroUi();
+  }
+  $('gyroEnable').addEventListener('click', enableGyro);
+  $('gyroBtn').addEventListener('click', enableGyro);
+  $('recenter').addEventListener('click', () => { base = null; setTarget(0, 0); });
+  $('interact').addEventListener('change', () => { if (!$('interact').checked) setTarget(0, 0); updateGyroUi(); });
+  updateGyroUi();
+  if (isTouch && $('interact').checked && 'DeviceOrientationEvent' in window
+      && typeof DeviceOrientationEvent.requestPermission !== 'function' && window.isSecureContext) enableGyro();
+
+  const setPanel = open => {
+    document.body.classList.toggle('panel-open', open);
+    $('menu').setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  $('menu').addEventListener('click', () => setPanel(!document.body.classList.contains('panel-open')));
+  $('panelClose').addEventListener('click', () => setPanel(false));
+  $('backdrop').addEventListener('click', () => setPanel(false));
+  window.addEventListener('keydown', ev => { if (ev.key === 'Escape') setPanel(false); });
+  if (qs.get('panel') === '1') setPanel(true);
+
+  $('reset').addEventListener('click', () => {
+    if (swing) toggleSwing(swing);
+    ids.forEach(k => $(k).value = defaults[k]);
+    checks.forEach(k => $(k).checked = checkDefaults[k]);
+    target.tx = 0; target.ty = 0; base = null;
+    resetView();
+    updateGyroUi();
+    schedule(true);
+  });
+  window.addEventListener('resize', () => schedule(false));
+
+  status.textContent = `RTI：${RTI.replace(/\.\.\/|\//g, '')}（${W}×${H}，${NL} 個拍攝光向）\n點光源，距離衰減 1/d²\n畫紙外觀用相對光向查 RTI（假設與觀看角度無關）` +
+    (hasMask ? '\n金紙反光為合成，依實際觀看方向計算' : '\n找不到 gold_mask.png，金紙反光停用');
+  schedule(true);
+  if (qs.get('swing') === 'x') toggleSwing('tx');
+  if (qs.get('swing') === 'y') toggleSwing('ty');
+})().catch(err => {
+  document.getElementById('status').textContent = '錯誤：' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gold Texture RTI</title>
+  <link rel="stylesheet" href="openlime/css/skin.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: system-ui, sans-serif; }
+    .openlime { position: absolute; inset: 0; }
+  </style>
+</head>
+<body>
+  <div class="openlime"></div>
+  <script src="openlime/js/openlime.min.js"></script>
+  <script>
+    (async () => {
+      let url = null;
+      for (const name of ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf']) {
+        try {
+          const r = await fetch('../' + name + '/info.json', { method: 'HEAD' });
+          if (r.ok) { url = '../' + name + '/info.json'; break; }
+        } catch (e) {}
+      }
+      if (!url) { document.body.insertAdjacentHTML('beforeend', '<p style="padding:16px">找不到 RTI 資料</p>'); return; }
+
+      const lime = new OpenLIME.Viewer('.openlime');
+      const layer = new OpenLIME.Layer({
+        label: 'Gold paper RTI (RBF)',
+        layout: 'image',
+        type: 'rti',
+        url,
+        normals: false
+      });
+      lime.addLayer('rti', layer);
+
+      OpenLIME.Skin.setUrl('openlime/skin/skin.svg');
+      const ui = new OpenLIME.UIBasic(lime, { showLightDirections: true });
+      ui.actions.zoomin.display = true;
+      ui.actions.zoomout.display = true;
+      ui.actions.light.active = true;
+    })();
+  </script>
+</body>
+</html>

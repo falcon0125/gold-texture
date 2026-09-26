@@ -1,0 +1,15 @@
+# 原始與中間檔案，體積大且可由腳本重建，不進版控
+image_stack/
+registered/
+rti_input/
+rti_input_flat/
+output/
+
+# 未攤平的舊版 RTI（頁面預設使用 rti_rbf_flat）
+rti_rbf/
+
+Thumbs.db
+.DS_Store
+
+# 全解析度 RTI（38MB），僅本機使用，不發布
+rti_rbf_flat/

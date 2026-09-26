@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Texture Line Light</title>
+<style>
+  :root { --bg:#121212; --panel:#1c1c1c; --fg:#e8e8e8; --muted:#9a9a9a; --accent:#d9a441; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, "Noto Sans TC", sans-serif; }
+  .wrap { display:flex; height:100%; }
+  .stage { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; padding:12px; }
+  canvas { max-width:100%; max-height:100%; display:block; touch-action:none; cursor:grab; }
+  canvas.dragging { cursor:grabbing; }
+  .panel { width:300px; background:var(--panel); padding:16px; overflow:auto; }
+  h1 { font-size:15px; margin:0 0 12px; font-weight:600; }
+  h2 { font-size:13px; margin:22px 0 0; padding-top:14px; border-top:1px solid #333; font-weight:600; }
+  label { display:block; margin:14px 0 4px; color:var(--muted); font-size:12px; }
+  label b { color:var(--fg); font-weight:500; float:right; font-variant-numeric:tabular-nums; }
+  label.check { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:13px; cursor:pointer; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  input[type=checkbox] { accent-color:var(--accent); width:16px; height:16px; }
+  button { width:100%; margin-top:8px; padding:8px; background:var(--accent); color:#111; border:0; border-radius:6px; font-weight:600; cursor:pointer; }
+  button.secondary { background:#333; color:var(--fg); }
+  .row { display:flex; gap:6px; }
+  .row button { margin-top:0; }
+  .hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
+  #status { margin-top:14px; color:var(--muted); font-size:12px; white-space:pre-line; }
+  @media (max-width: 700px) { .wrap { flex-direction:column; } .panel { width:auto; } .stage { height:60vh; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage"><canvas id="c"></canvas></div>
+  <div class="panel">
+    <h1>線光源重打光</h1>
+    <div class="row">
+      <button id="zin" class="secondary">放大</button>
+      <button id="zout" class="secondary">縮小</button>
+      <button id="zreset" class="secondary">全圖</button>
+    </div>
+    <p class="hint">滾輪或雙指縮放、拖曳平移、雙擊回到全圖　<b id="vzoom"></b></p>
+
+    <label>燈管左右位置 <b id="vx"></b></label>
+    <input id="x" type="range" min="-1.2" max="1.2" step="0.01" value="-0.8">
+    <button id="play">▶ 從左到右掃過</button>
+    <label>燈管上下位置 <b id="vy"></b></label>
+    <input id="y" type="range" min="-1" max="1" step="0.01" value="0">
+    <label>燈離畫面高度（畫寬倍數） <b id="vh"></b></label>
+    <input id="h" type="range" min="0.05" max="1.5" step="0.01" value="0.35">
+    <label>燈管長度（畫寬倍數，0 = 點光源） <b id="vlen"></b></label>
+    <input id="len" type="range" min="0" max="2" step="0.01" value="1.3">
+    <label>燈管角度（0° = 直立） <b id="vang"></b></label>
+    <input id="ang" type="range" min="0" max="180" step="1" value="0">
+    <label>曝光 <b id="vexp"></b></label>
+    <input id="exp" type="range" min="-3" max="3" step="0.05" value="0">
+    <label>光向內插平滑度 <b id="vsigma"></b></label>
+    <input id="sigma" type="range" min="0.08" max="0.6" step="0.01" value="0.22">
+
+    <h2>金紙反光（合成）</h2>
+    <label class="check"><input id="gold" type="checkbox" checked> 啟用金紙反光</label>
+    <label class="check"><input id="showMask" type="checkbox"> 顯示金紙遮罩</label>
+    <label>反光強度 <b id="vgstr"></b></label>
+    <input id="gstr" type="range" min="0" max="3" step="0.01" value="0.6">
+    <label>光澤銳利度 <b id="vshin"></b></label>
+    <input id="shin" type="range" min="1" max="3" step="0.01" value="2">
+    <label>皺褶閃點 <b id="vspark"></b></label>
+    <input id="spark" type="range" min="0" max="0.6" step="0.01" value="0.25">
+
+    <button id="reset" class="secondary">重設打光</button>
+    <div id="status">載入中…</div>
+    <p class="hint"><a href="tilt.html" style="color:var(--accent)">固定光源・傾斜畫紙頁面</a></p>
+  </div>
+</div>
+<script>
+(async function () {
+  const GW = 48, NS = 16;
+  const $ = id => document.getElementById(id);
+  const status = $('status');
+  const ids = ['x', 'y', 'h', 'len', 'ang', 'exp', 'sigma', 'gstr', 'shin', 'spark'];
+  const checks = ['gold', 'showMask'];
+  const defaults = Object.fromEntries(ids.map(k => [k, $(k).value]));
+  const checkDefaults = Object.fromEntries(checks.map(k => [k, $(k).checked]));
+  const qs = new URLSearchParams(location.search);
+  ids.forEach(k => { if (qs.has(k)) $(k).value = qs.get(k); });
+  checks.forEach(k => { if (qs.has(k)) $(k).checked = qs.get(k) === '1'; });
+
+  const canvas = $('c');
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+  if (!gl) { status.textContent = '這個瀏覽器不支援 WebGL2'; return; }
+
+  const candidates = qs.has('rti') ? [qs.get('rti')] : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf'];
+  let RTI = null, info = null;
+  for (const name of candidates) {
+    const r = await fetch('../' + name + '/info.json');
+    if (r.ok) { RTI = '../' + name + '/'; info = await r.json(); break; }
+  }
+  if (!info) throw new Error('找不到 RTI 資料');
+  let goldColor = [1.0, 0.72, 0.32];
+  try { goldColor = (await (await fetch('gold.json')).json()).color_linear_rgb; } catch (e) {}
+  const W = info.width, H = info.height, NL = info.lights.length / 3, NP = info.nplanes;
+  const mat = info.materials[0];
+  const lights = new Float32Array(info.lights);
+  const B = new Float32Array((NP + 1) * NL * 3);
+  for (let p = 0; p <= NP; p++)
+    for (let l = 0; l < NL; l++)
+      for (let c = 0; c < 3; c++) {
+        const o = 3 * (p * NL + l) + c;
+        B[o] = p === 0 ? info.basis[o] / 255 : (info.basis[o] - 127) / mat.range[p - 1];
+      }
+  const GH = Math.round(GW * H / W);
+  const aspect = H / W;
+
+  function loadImage(src) {
+    return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  }
+  function texParams(filter, wrap) {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.LINEAR_MIPMAP_LINEAR ? gl.LINEAR : filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+  }
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  const nPlaneImgs = Math.ceil(NP / 3);
+  const planeTex = [];
+  for (let i = 0; i < nPlaneImgs; i++) {
+    const im = await loadImage(RTI + 'plane_' + i + '.' + info.format);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, im);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    texParams(gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+    planeTex.push(t);
+  }
+
+  const maskTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  let hasMask = true;
+  try {
+    const mi = await loadImage('gold_mask.png');
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, mi);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    texParams(gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+  } catch (e) {
+    hasMask = false;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+    texParams(gl.NEAREST, gl.CLAMP_TO_EDGE);
+  }
+
+  const NZ = 512;
+  const noise = new Uint8Array(NZ * NZ * 3);
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  for (let i = 0; i < NZ * NZ; i++) {
+    const u = Math.max(rnd(), 1e-6), v = rnd();
+    const r = Math.sqrt(-2 * Math.log(u)), a = 2 * Math.PI * v;
+    noise[3 * i] = Math.max(0, Math.min(255, 127.5 + 42 * r * Math.cos(a)));
+    noise[3 * i + 1] = Math.max(0, Math.min(255, 127.5 + 42 * r * Math.sin(a)));
+  }
+  const noiseTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, noiseTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, NZ, NZ, 0, gl.RGB, gl.UNSIGNED_BYTE, noise);
+  texParams(gl.NEAREST, gl.REPEAT);
+
+  const wTex = [], wData = [];
+  for (let p = 0; p <= NP; p++) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, GW, GH);
+    texParams(gl.LINEAR, gl.CLAMP_TO_EDGE);
+    wTex.push(t);
+    wData.push(new Float32Array(GW * GH * 4));
+  }
+
+  const vs = `#version 300 es
+uniform vec3 view;
+in vec2 pos; out vec2 uv;
+void main() {
+  uv = vec2(view.x + pos.x * 0.5 / view.z, view.y - pos.y * 0.5 / view.z);
+  gl_Position = vec4(pos, 0.0, 1.0);
+}`;
+  let fs = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 outColor;
+uniform float bias[${NP}]; uniform float scale[${NP}]; uniform float expo;
+uniform sampler2D GM; uniform sampler2D NZ;
+uniform vec3 lightPts[${NS}]; uniform float lightH; uniform float aspect; uniform float iref;
+uniform vec3 goldColor; uniform float goldStr; uniform float shin; uniform float spark;
+uniform vec2 noiseScale; uniform int goldOn; uniform int showMask;
+`;
+  for (let i = 0; i < nPlaneImgs; i++) fs += `uniform sampler2D P${i};\n`;
+  for (let p = 0; p <= NP; p++) fs += `uniform sampler2D W${p};\n`;
+  fs += `
+vec3 s2l(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 l2s(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main() {
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { outColor = vec4(0.07, 0.07, 0.07, 1.0); return; }
+  vec4 w0 = texture(W0, uv);
+  vec3 col = w0.rgb;
+`;
+  for (let i = 0; i < nPlaneImgs; i++) fs += `  vec3 t${i} = texture(P${i}, uv).rgb;\n`;
+  for (let k = 0; k < NP; k++) {
+    const comp = 'rgb'[k % 3];
+    fs += `  col += (t${Math.floor(k / 3)}.${comp} - bias[${k}]) * scale[${k}] * texture(W${k + 1}, uv).rgb;\n`;
+  }
+  fs += `
+  vec3 lin = s2l(clamp(col, 0.0, 1.0)) * w0.a;
+  float m = texture(GM, uv).r;
+  if (goldOn == 1 && m > 0.001) {
+    vec2 tilt = (texture(NZ, uv * noiseScale).rg * 2.0 - 1.0) * spark * 3.0;
+    vec3 N = normalize(vec3(tilt, 1.0));
+    vec3 P = vec3(uv.x - 0.5, (0.5 - uv.y) * aspect, 0.0);
+    float s = 0.0;
+    for (int i = 0; i < ${NS}; i++) {
+      vec3 d = vec3(lightPts[i].xy, lightH) - P;
+      float d2 = dot(d, d);
+      vec3 Ld = d / sqrt(d2);
+      vec3 Hv = normalize(Ld + vec3(0.0, 0.0, 1.0));
+      s += pow(max(dot(N, Hv), 0.0), shin) * max(dot(N, Ld), 0.0) / d2;
+    }
+    lin += m * goldStr * goldColor * s * (shin + 8.0) / (8.0 * 3.14159265) / iref;
+  }
+  lin *= expo;
+  vec3 outc = l2s(clamp(lin, 0.0, 1.0));
+  if (showMask == 1) outc = mix(outc, vec3(1.0, 0.1, 0.1), m * 0.7);
+  outColor = vec4(outc, 1.0);
+}`;
+  function compile(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'pos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = name => gl.getUniformLocation(prog, name);
+  gl.uniform1fv(U('bias'), new Float32Array(mat.bias));
+  gl.uniform1fv(U('scale'), new Float32Array(mat.scale));
+  gl.uniform1f(U('aspect'), aspect);
+  gl.uniform3fv(U('goldColor'), new Float32Array(goldColor));
+  gl.uniform2f(U('noiseScale'), W / (NZ * 2), H / (NZ * 2));
+  let unit = 0;
+  function bindUnit(tex, name) {
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(U(name), unit++);
+  }
+  for (let i = 0; i < nPlaneImgs; i++) bindUnit(planeTex[i], 'P' + i);
+  for (let p = 0; p <= NP; p++) bindUnit(wTex[p], 'W' + p);
+  bindUnit(maskTex, 'GM');
+  bindUnit(noiseTex, 'NZ');
+
+  let minLz = 1;
+  for (let l = 0; l < NL; l++) minLz = Math.min(minLz, lights[3 * l + 2]);
+  const wl = new Float64Array(NL), e = new Float64Array(NL);
+  function samplePoints(v) {
+    const a = v.ang * Math.PI / 180, ax = Math.sin(a), ay = Math.cos(a);
+    const pts = [];
+    for (let s = 0; s < NS; s++) {
+      const t = v.len === 0 ? 0 : (s / (NS - 1) - 0.5) * v.len;
+      pts.push([v.x + t * ax, v.y * aspect * 0.5 + t * ay]);
+    }
+    return pts;
+  }
+  function irradiance(pts, h, X, Y) {
+    let I = 0;
+    for (const [sx, sy] of pts) I += 1 / ((sx - X) ** 2 + (sy - Y) ** 2 + h * h);
+    return I;
+  }
+
+  function computeWeights(v, pts, ref) {
+    const sig2 = v.sigma * v.sigma;
+    for (let gy = 0; gy < GH; gy++) {
+      const Y = (0.5 - (gy + 0.5) / GH) * aspect;
+      for (let gx = 0; gx < GW; gx++) {
+        const X = (gx + 0.5) / GW - 0.5;
+        wl.fill(0);
+        let I = 0;
+        for (const [sx, sy] of pts) {
+          const dx = sx - X, dy = sy - Y, dz = v.h;
+          const d2 = dx * dx + dy * dy + dz * dz, inv = 1 / Math.sqrt(d2);
+          const lx = dx * inv, ly = dy * inv, lz = dz * inv;
+          // below the lowest captured elevation the RBF blend can't darken further, so continue the cosine falloff here
+          const a = Math.min(1, lz / minLz) / d2;
+          let dmin = Infinity;
+          for (let l = 0; l < NL; l++) {
+            const q = (lx - lights[3 * l]) ** 2 + (ly - lights[3 * l + 1]) ** 2 + (lz - lights[3 * l + 2]) ** 2;
+            e[l] = q; if (q < dmin) dmin = q;
+          }
+          let sum = 0;
+          for (let l = 0; l < NL; l++) { e[l] = Math.exp(-(e[l] - dmin) / sig2); sum += e[l]; }
+          for (let l = 0; l < NL; l++) wl[l] += a * e[l] / sum;
+          I += a;
+        }
+        const idx = (gy * GW + gx) * 4;
+        for (let p = 0; p <= NP; p++) {
+          const d = wData[p];
+          for (let c = 0; c < 3; c++) {
+            let s = 0;
+            for (let l = 0; l < NL; l++) s += wl[l] * B[3 * (p * NL + l) + c];
+            d[idx + c] = s / I;
+          }
+          d[idx + 3] = 1;
+        }
+        wData[0][idx + 3] = I / ref;
+      }
+    }
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    for (let p = 0; p <= NP; p++) {
+      gl.bindTexture(gl.TEXTURE_2D, wTex[p]);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GW, GH, gl.RGBA, gl.FLOAT, wData[p]);
+    }
+  }
+
+  const view = { cx: 0.5, cy: 0.5, z: 1 };
+  if (qs.has('z')) view.z = parseFloat(qs.get('z'));
+  if (qs.has('cx')) view.cx = parseFloat(qs.get('cx'));
+  if (qs.has('cy')) view.cy = parseFloat(qs.get('cy'));
+  function clampView() {
+    view.z = Math.min(24, Math.max(1, view.z));
+    const h = 0.5 / view.z;
+    view.cx = Math.min(1 - h, Math.max(h, view.cx));
+    view.cy = Math.min(1 - h, Math.max(h, view.cy));
+  }
+  clampView();
+  function zoomAt(mx, my, f) {
+    const ux = view.cx + (mx - 0.5) / view.z, uy = view.cy + (my - 0.5) / view.z;
+    view.z *= f;
+    view.z = Math.min(24, Math.max(1, view.z));
+    view.cx = ux - (mx - 0.5) / view.z;
+    view.cy = uy - (my - 0.5) / view.z;
+    clampView();
+    schedule(false);
+  }
+
+  function resize() {
+    const stage = canvas.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let cw = stage.width - 24, ch = stage.height - 24;
+    if (ch / cw > aspect) ch = cw * aspect; else cw = ch / aspect;
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    schedule(false);
+  }
+
+  function values() {
+    return Object.fromEntries(ids.map(k => [k, parseFloat($(k).value)]));
+  }
+  function updateLighting() {
+    const v = values();
+    $('vx').textContent = v.x.toFixed(2);
+    $('vy').textContent = v.y.toFixed(2);
+    $('vh').textContent = v.h.toFixed(2);
+    $('vlen').textContent = v.len.toFixed(2);
+    $('vang').textContent = v.ang + '°';
+    $('vexp').textContent = (v.exp >= 0 ? '+' : '') + v.exp.toFixed(1) + ' EV';
+    $('vsigma').textContent = v.sigma.toFixed(2);
+    $('vgstr').textContent = v.gstr.toFixed(2);
+    const shin = Math.pow(10, v.shin);
+    $('vshin').textContent = shin.toFixed(0);
+    $('vspark').textContent = v.spark.toFixed(2);
+
+    const pts = samplePoints(v);
+    const ref = irradiance(samplePoints({ ...v, x: 0, y: 0 }), v.h, 0, 0);
+    computeWeights(v, pts, ref);
+    const lp = new Float32Array(NS * 3);
+    pts.forEach(([sx, sy], i) => { lp[3 * i] = sx; lp[3 * i + 1] = sy; });
+    gl.uniform3fv(U('lightPts'), lp);
+    gl.uniform1f(U('lightH'), v.h);
+    gl.uniform1f(U('iref'), ref);
+    gl.uniform1f(U('expo'), Math.pow(2, v.exp));
+    gl.uniform1f(U('goldStr'), v.gstr);
+    gl.uniform1f(U('shin'), shin);
+    gl.uniform1f(U('spark'), v.spark);
+    gl.uniform1i(U('goldOn'), $('gold').checked ? 1 : 0);
+    gl.uniform1i(U('showMask'), $('showMask').checked ? 1 : 0);
+  }
+  function render() {
+    $('vzoom').textContent = view.z.toFixed(1) + '×';
+    gl.uniform3f(U('view'), view.cx, view.cy, view.z);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  let pending = false, lightingDirty = true;
+  function schedule(lighting) {
+    if (lighting) lightingDirty = true;
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      if (lightingDirty) { updateLighting(); lightingDirty = false; }
+      render();
+    });
+  }
+  ids.forEach(k => $(k).addEventListener('input', () => schedule(true)));
+  checks.forEach(k => $(k).addEventListener('change', () => schedule(true)));
+
+  canvas.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    zoomAt((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, Math.exp(-ev.deltaY * 0.0015));
+  }, { passive: false });
+  const pointers = new Map();
+  let pinch = null;
+  canvas.addEventListener('pointerdown', ev => {
+    canvas.setPointerCapture(ev.pointerId);
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    canvas.classList.add('dragging');
+    pinch = null;
+  });
+  canvas.addEventListener('pointermove', ev => {
+    if (!pointers.has(ev.pointerId)) return;
+    const r = canvas.getBoundingClientRect();
+    const prev = pointers.get(ev.pointerId);
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 1) {
+      view.cx -= (ev.clientX - prev.x) / r.width / view.z;
+      view.cy -= (ev.clientY - prev.y) / r.height / view.z;
+      clampView();
+      schedule(false);
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = ((a.x + b.x) / 2 - r.left) / r.width, my = ((a.y + b.y) / 2 - r.top) / r.height;
+      if (pinch) zoomAt(mx, my, dist / pinch);
+      pinch = dist;
+    }
+  });
+  const endPointer = ev => {
+    pointers.delete(ev.pointerId);
+    pinch = null;
+    if (pointers.size === 0) canvas.classList.remove('dragging');
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  const resetView = () => { view.cx = 0.5; view.cy = 0.5; view.z = 1; schedule(false); };
+  canvas.addEventListener('dblclick', resetView);
+  $('zin').addEventListener('click', () => zoomAt(0.5, 0.5, 1.5));
+  $('zout').addEventListener('click', () => zoomAt(0.5, 0.5, 1 / 1.5));
+  $('zreset').addEventListener('click', resetView);
+
+  let playing = false, t0 = 0;
+  const DUR = 6000;
+  function tick(now) {
+    if (!playing) return;
+    const f = ((now - t0) % DUR) / DUR;
+    $('x').value = (-1.2 + f * 2.4).toFixed(3);
+    schedule(true);
+    requestAnimationFrame(tick);
+  }
+  $('play').addEventListener('click', () => {
+    playing = !playing;
+    $('play').textContent = playing ? '❚❚ 暫停' : '▶ 從左到右掃過';
+    if (playing) { t0 = performance.now(); requestAnimationFrame(tick); }
+  });
+  $('reset').addEventListener('click', () => {
+    ids.forEach(k => $(k).value = defaults[k]);
+    checks.forEach(k => $(k).checked = checkDefaults[k]);
+    schedule(true);
+  });
+  window.addEventListener('resize', resize);
+
+  status.textContent = `RTI：${RTI.replace(/\.\.\/|\//g, '')}（${W}×${H}，${NL} 個拍攝光向）\n燈管以 ${NS} 個點取樣，距離衰減 1/d²\n光向為 ${NL} 張照片之間的內插` +
+    (hasMask ? '\n金紙反光為合成（遮罩＋鏡面模型）' : '\n找不到 gold_mask.png，金紙反光停用');
+  resize();
+  if (qs.get('play') === '1') $('play').click();
+})().catch(err => {
+  document.getElementById('status').textContent = '錯誤：' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
