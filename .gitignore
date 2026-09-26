@@ -13,3 +13,4 @@ Thumbs.db
 
 # 全解析度 RTI（38MB），僅本機使用，不發布
 rti_rbf_flat/
+blk*.js
