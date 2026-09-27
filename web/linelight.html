@@ -100,7 +100,15 @@
   const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
   if (!gl) { status.textContent = '這個瀏覽器不支援 WebGL2'; return; }
 
-  const candidates = qs.has('rti') ? [qs.get('rti')] : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf'];
+  const avifOK = await new Promise(res => {
+    const im = new Image();
+    im.onload = () => res(true);
+    im.onerror = () => res(false);
+    im.src = 'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADrbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAAAAAAAOcGl0bQAAAAAAAQAAAB5pbG9jAAAAAEQAAAEAAQAAAAEAAAETAAAAIQAAAChpaW5mAAAAAAABAAAAGmluZmUCAAAAAAEAAGF2MDFDb2xvcgAAAABqaXBycAAAAEtpcGNvAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAQcGl4aQAAAAADCAgIAAAADGF2MUOBAAwAAAAAE2NvbHJuY2x4AAEADQAGgAAAABdpcG1hAAAAAAAAAAEAAQQBAoMEAAAAKW1kYXQSAAoIGAAGiAhoNCAyExxHh4Xd0000wsbAAJA1jjx+iFA=';
+  });
+  const candidates = qs.has('rti') ? [qs.get('rti')]
+    : (avifOK ? ['rti_rbf_flat_avif', 'rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf_flat_quarter']
+              : ['rti_rbf_flat', 'rti_rbf_flat_half', 'rti_rbf_flat_quarter', 'rti_rbf']);
   let RTI = null, info = null;
   for (const name of candidates) {
     const r = await fetch('../' + name + '/info.json');

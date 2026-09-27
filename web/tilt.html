@@ -719,38 +719,40 @@ void main() {
   schedule(true);
   finishLoading();
 
+  function supportsAvif() {
+    return new Promise(res => {
+      const im = new Image();
+      im.onload = () => res(true);
+      im.onerror = () => res(false);
+      im.src = 'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADrbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAAAAAAAOcGl0bQAAAAAAAQAAAB5pbG9jAAAAAEQAAAEAAQAAAAEAAAETAAAAIQAAAChpaW5mAAAAAAABAAAAGmluZmUCAAAAAAEAAGF2MDFDb2xvcgAAAABqaXBycAAAAEtpcGNvAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAQcGl4aQAAAAADCAgIAAAADGF2MUOBAAwAAAAAE2NvbHJuY2x4AAEADQAGgAAAABdpcG1hAAAAAAAAAAEAAQQBAoMEAAAAKW1kYXQSAAoIGAAGiAhoNCAyExxHh4Xd0000wsbAAJA1jjx+iFA=';
+    });
+  }
   async function upgradeQuality() {
     if (qs.has('rti')) return;
-    const nextOf = { rti_rbf_flat_quarter: 'rti_rbf_flat_half', rti_rbf_flat_half: 'rti_rbf_flat' };
-    let current = RTI.replace(/\.\.\/|\//g, '');
-    for (;;) {
-      const better = nextOf[current];
-      if (!better) return;
-      let bi;
-      try {
-        const r = await fetch('../' + better + '/info.json');
-        if (!r.ok) return;
-        bi = await r.json();
-      } catch (e) { return; }
-      loaded.done = 0; loaded.files = nPlaneImgs; loaded.bytes = 0; loaded.label = '提升畫質中…';
-      try {
-        for (let i = 0; i < nPlaneImgs; i++) {
-          const im = await loadImage('../' + better + '/plane_' + i + '.' + bi.format);
-          gl.activeTexture(gl.TEXTURE0 + i);
-          gl.bindTexture(gl.TEXTURE_2D, planeTex[i]);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, im);
-          gl.generateMipmap(gl.TEXTURE_2D);
-        }
-      } catch (e) { finishLoading(); return; }
-      gl.uniform2f(U('noiseScale'), bi.width / (NZ * 2), bi.height / (NZ * 2));
-      schedule(false);
-      current = better;
-      barInfo.textContent = '已提升畫質（' + bi.width + '×' + bi.height + '）';
-      progBar.style.width = '0';
-      setTimeout(finishLoading, 2500);
-      if (!isTouch) continue;
-      return;
-    }
+    // AVIF 可以用同樣的流量拿到全尺寸，不支援的瀏覽器退回半解析度 JPEG
+    const target = (await supportsAvif()) ? 'rti_rbf_flat_avif' : 'rti_rbf_flat_half';
+    if (RTI.indexOf(target) >= 0) return;
+    let bi;
+    try {
+      const r = await fetch('../' + target + '/info.json');
+      if (!r.ok) return;
+      bi = await r.json();
+    } catch (e) { return; }
+    loaded.done = 0; loaded.files = nPlaneImgs; loaded.bytes = 0; loaded.label = '提升畫質中…';
+    try {
+      for (let i = 0; i < nPlaneImgs; i++) {
+        const im = await loadImage('../' + target + '/plane_' + i + '.' + bi.format);
+        gl.activeTexture(gl.TEXTURE0 + i);
+        gl.bindTexture(gl.TEXTURE_2D, planeTex[i]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, im);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }
+    } catch (e) { finishLoading(); return; }
+    gl.uniform2f(U('noiseScale'), bi.width / (NZ * 2), bi.height / (NZ * 2));
+    schedule(false);
+    barInfo.textContent = '已提升畫質（' + bi.width + '×' + bi.height + '）';
+    progBar.style.width = '0';
+    setTimeout(finishLoading, 2500);
   }
   upgradeQuality();
   if (qs.get('debug') === '1') {
